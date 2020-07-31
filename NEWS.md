@@ -1,8 +1,13 @@
+## 3.1.0 (Released)
+
+This release includes support for multiple instances of mod-oai-pmh deployed
+
+* [MODOAIPMH-202](https://issues.folio.org/browse/MODOAIPMH-202) Modify data retrieval from OAI-PMH view
+
 ## 3.0.4 (Released)
 
 * [MODOAIPMH-107](https://issues.folio.org/browse/MODOAIPMH-107) Suppress holdings and items records from discovery
 * [MODOAIPMH-192](https://issues.folio.org/browse/MODOAIPMH-192) Resumption token fails from time to time on big amount of data
-
 
 ## 3.0.3 (Released)
  
