@@ -84,6 +84,7 @@
   </dependencyManagement>
 
   <properties>
+    <argLine/>
     <module_name>mod-oai-pmh</module_name>
     <http.port>8081</http.port>
     <ramlfiles_path>${basedir}/ramls</ramlfiles_path>
