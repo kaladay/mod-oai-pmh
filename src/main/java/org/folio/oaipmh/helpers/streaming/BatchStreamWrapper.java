@@ -16,7 +16,8 @@ import java.util.concurrent.atomic.LongAdder;
 public class BatchStreamWrapper implements WriteStream<JsonEvent> {
 
   private final Vertx vertx;
-
+  //TODO REMOVE
+  public static final int DATABASE_FETCHING_CHUNK_SIZE = 100;
   private Handler<Void> drainHandler;
   private Handler<Throwable> exceptionHandler;
   private volatile Handler<List<JsonEvent>> batchReadyHandler;
@@ -30,9 +31,9 @@ public class BatchStreamWrapper implements WriteStream<JsonEvent> {
   private final LongAdder page = new LongAdder();
 
 
-  public BatchStreamWrapper(Vertx vertx, int batchSize) {
+  public BatchStreamWrapper(Vertx vertx) {
     this.vertx = vertx;
-    this.batchSize = batchSize;
+    this.batchSize = DATABASE_FETCHING_CHUNK_SIZE;
   }
 
   @Override

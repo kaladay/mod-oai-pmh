@@ -459,4 +459,8 @@ public abstract class AbstractHelper implements VerbHelper {
       .anyMatch(Objects::isNull);
   }
 
+  protected void handleException(Promise<?> promise, Throwable e) {
+    logger.error(e.getMessage(), e);
+    promise.fail(e);
+  }
 }

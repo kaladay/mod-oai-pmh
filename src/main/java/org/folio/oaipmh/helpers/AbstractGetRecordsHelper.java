@@ -180,12 +180,6 @@ public abstract class AbstractGetRecordsHelper extends AbstractHelper {
     return records;
   }
 
-
-  private void handleException(Promise<Response> future, Throwable e) {
-    logger.error(GENERIC_ERROR_MESSAGE, e);
-    future.fail(e);
-  }
-
   private javax.ws.rs.core.Response buildResponse(OAIPMH oai, Request request) {
     if (!oai.getErrors().isEmpty()) {
       return getResponseHelper().buildFailureResponse(oai, request);
