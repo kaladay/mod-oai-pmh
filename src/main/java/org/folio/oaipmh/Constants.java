@@ -1,6 +1,9 @@
 package org.folio.oaipmh;
 
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
 
 public final class Constants {
 
@@ -8,11 +11,28 @@ public final class Constants {
     throw new IllegalStateException("This class holds constants only");
   }
 
+  public static final String DATE_ONLY_PATTERN = "^\\d{4}-\\d{2}-\\d{2}$";
+  /**
+   * The dates returned by inventory storage service are in format "2018-09-19T02:52:08.873+0000".
+   * Using {@link DateTimeFormatter#ISO_LOCAL_DATE_TIME} and just in case 2 offsets "+HHmm" and "+HH:MM"
+   */
+  public static final DateTimeFormatter formatter = new DateTimeFormatterBuilder()
+    .parseCaseInsensitive()
+    .append(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+    .optionalStart().appendOffset("+HH:MM", "Z").optionalEnd()
+    .optionalStart().appendOffset("+HHmm", "Z").optionalEnd()
+    .toFormatter();
+
   /**
    * Strict ISO Date and Time with UTC offset.
    * Represents {@linkplain org.openarchives.oai._2.GranularityType#YYYY_MM_DD_THH_MM_SS_Z YYYY_MM_DD_THH_MM_SS_Z} granularity
    */
   public static final String ISO_DATE_TIME_PATTERN = "yyyy-MM-dd'T'HH:mm:ss'Z'";
+  public static final String[] DATE_FORMATS = {
+    org.apache.commons.lang.time.DateFormatUtils.ISO_DATE_FORMAT.getPattern(),
+    ISO_DATE_TIME_PATTERN
+  };
+  public static final DateFormat ISO_DATE_FORMAT = new SimpleDateFormat(ISO_DATE_TIME_PATTERN);
   public static final DateTimeFormatter ISO_UTC_DATE_TIME = DateTimeFormatter.ofPattern(ISO_DATE_TIME_PATTERN);
   public static final DateTimeFormatter ISO_UTC_DATE_ONLY = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 

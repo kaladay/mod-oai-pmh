@@ -4,8 +4,8 @@ import static org.apache.commons.lang3.StringUtils.EMPTY;
 import static org.apache.commons.lang3.StringUtils.isNotEmpty;
 import static org.folio.oaipmh.Constants.BAD_DATESTAMP_FORMAT_ERROR;
 import static org.folio.oaipmh.Constants.CANNOT_DISSEMINATE_FORMAT_ERROR;
+import static org.folio.oaipmh.Constants.DATE_ONLY_PATTERN;
 import static org.folio.oaipmh.Constants.FROM_PARAM;
-import static org.folio.oaipmh.Constants.ISO_DATE_TIME_PATTERN;
 import static org.folio.oaipmh.Constants.ISO_UTC_DATE_ONLY;
 import static org.folio.oaipmh.Constants.ISO_UTC_DATE_TIME;
 import static org.folio.oaipmh.Constants.LIST_NO_REQUIRED_PARAM_ERROR;
@@ -27,16 +27,12 @@ import static org.openarchives.oai._2.OAIPMHerrorcodeType.CANNOT_DISSEMINATE_FOR
 import static org.openarchives.oai._2.OAIPMHerrorcodeType.NO_RECORDS_MATCH;
 
 import java.math.BigInteger;
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +41,6 @@ import java.util.stream.Collectors;
 
 import javax.ws.rs.core.Response;
 
-import org.apache.commons.lang.time.DateUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -54,6 +49,7 @@ import org.folio.oaipmh.Request;
 import org.folio.oaipmh.ResponseConverter;
 import org.folio.oaipmh.helpers.response.ResponseHelper;
 import org.folio.oaipmh.helpers.storage.StorageHelper;
+import org.folio.oaipmh.service.Utils;
 import org.openarchives.oai._2.GranularityType;
 import org.openarchives.oai._2.HeaderType;
 import org.openarchives.oai._2.MetadataType;
@@ -63,6 +59,7 @@ import org.openarchives.oai._2.RecordType;
 import org.openarchives.oai._2.ResumptionTokenType;
 import org.openarchives.oai._2.SetType;
 import org.openarchives.oai._2.StatusType;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -76,15 +73,10 @@ import io.vertx.core.logging.LoggerFactory;
  */
 public abstract class AbstractHelper implements VerbHelper {
 
-  private static final String DATE_ONLY_PATTERN = "^\\d{4}-\\d{2}-\\d{2}$";
   private static final Logger logger = LoggerFactory.getLogger(AbstractHelper.class);
-  protected final DateFormat dateFormat = new SimpleDateFormat(ISO_DATE_TIME_PATTERN);
 
-
-  private static final String[] dateFormats = {
-    org.apache.commons.lang.time.DateFormatUtils.ISO_DATE_FORMAT.getPattern(),
-    ISO_DATE_TIME_PATTERN
-  };
+  @Autowired
+  protected Utils utils;
 
   private ResponseHelper responseHelper = ResponseHelper.getInstance();
 
@@ -199,33 +191,6 @@ public abstract class AbstractHelper implements VerbHelper {
         .withCode(BAD_ARGUMENT)
         .withValue(String.format(BAD_DATESTAMP_FORMAT_ERROR, date.getKey(), date.getValue())));
       return null;
-    }
-  }
-
-  /**
-   * Parse a date from string and compensate one date or one second because in SRS the dates are non-inclusive.
-   * @param dateTimeString - date/time supplied
-   * @param shouldCompensateUntilDate = if the date is used as until parameter
-   * @return date that will be used to query SRS
-   */
-  protected Date convertStringToDate(String dateTimeString, boolean shouldCompensateUntilDate) {
-    try {
-      if (StringUtils.isEmpty(dateTimeString)) {
-        return null;
-      }
-      Date date = DateUtils.parseDate(dateTimeString, dateFormats);
-      if (shouldCompensateUntilDate){
-        if (dateTimeString.matches(DATE_ONLY_PATTERN)){
-          date = DateUtils.addDays(date, 1);
-        }else{
-          date = DateUtils.addSeconds(date, 1);
-        }
-      }
-      return date;
-    } catch (DateTimeParseException | ParseException e) {
-      logger.error(e);
-      return null;
-
     }
   }
 

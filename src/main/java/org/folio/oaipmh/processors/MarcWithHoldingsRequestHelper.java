@@ -1,8 +1,8 @@
 package org.folio.oaipmh.processors;
 
+import static org.folio.oaipmh.Constants.formatter;
+
 import java.time.Instant;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
@@ -23,7 +23,6 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 
-
 public class MarcWithHoldingsRequestHelper extends StreamingHelper {
 
   protected final Logger logger = LoggerFactory.getLogger(getClass());
@@ -31,17 +30,6 @@ public class MarcWithHoldingsRequestHelper extends StreamingHelper {
   public static final MarcWithHoldingsRequestHelper INSTANCE = new MarcWithHoldingsRequestHelper();
 
   private static final String INSTANCE_UPDATED_DATE_FIELD_NAME = "updateddate";
-
-  /**
-   * The dates returned by inventory storage service are in format "2018-09-19T02:52:08.873+0000".
-   * Using {@link DateTimeFormatter#ISO_LOCAL_DATE_TIME} and just in case 2 offsets "+HHmm" and "+HH:MM"
-   */
-  private static final DateTimeFormatter formatter = new DateTimeFormatterBuilder()
-    .parseCaseInsensitive()
-    .append(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-    .optionalStart().appendOffset("+HH:MM", "Z").optionalEnd()
-    .optionalStart().appendOffset("+HHmm", "Z").optionalEnd()
-    .toFormatter();
 
   public static MarcWithHoldingsRequestHelper getInstance() {
     return INSTANCE;

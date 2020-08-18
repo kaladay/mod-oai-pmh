@@ -5,12 +5,11 @@ import static org.folio.oaipmh.Constants.REPOSITORY_SUPPRESSED_RECORDS_PROCESSIN
 import static org.folio.oaipmh.Constants.RESUMPTION_TOKEN_FLOW_ERROR;
 import static org.folio.oaipmh.Constants.RESUMPTION_TOKEN_FORMAT_ERROR;
 import static org.folio.oaipmh.helpers.RepositoryConfigurationUtil.getBooleanProperty;
+import static org.folio.oaipmh.service.Utils.convertStringToDate;
 import static org.openarchives.oai._2.OAIPMHerrorcodeType.BAD_RESUMPTION_TOKEN;
 
 import java.util.Date;
 import java.util.List;
-
-import javax.ws.rs.core.Response;
 
 import org.apache.commons.lang3.StringUtils;
 import org.folio.oaipmh.Request;
@@ -87,21 +86,6 @@ public class GetOaiIdentifiersHelper extends AbstractHelper {
             promise.fail(e);
           }
         }));
-
-
-//      //region REMOVE IT
-//      // 2. Search for instances
-//       VertxCompletableFuture.from(ctx, httpClient.request(instanceEndpoint, request.getOkapiHeaders(), false))
-//        // 3. Verify response and build list of identifiers
-//        .thenApply(response -> buildListIdentifiers(request, response))
-//        // 4. Build final response to client (potentially blocking operation thus running on worker thread)
-//        .thenCompose(oai -> supplyBlockingAsync(ctx, () -> buildResponse(oai, request)))
-//        .thenAccept(promise::complete)
-//        .exceptionally(e -> {
-//          logger.error(GENERIC_ERROR, e);
-//          promise.fail(e);
-//          return null;
-//        });
     } catch (Exception e) {
       logger.error(GENERIC_ERROR, e);
       promise.fail(e);

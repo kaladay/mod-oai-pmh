@@ -17,38 +17,36 @@ import static org.folio.oaipmh.helpers.RepositoryConfigurationUtil.getBooleanPro
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.function.Function;
-import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 import javax.ws.rs.core.Response;
 
 import org.apache.commons.collections4.CollectionUtils;
 import org.folio.oaipmh.Request;
+import org.folio.oaipmh.dao.impl.PostgresClientOaiPmhRepository;
 import org.folio.oaipmh.helpers.AbstractHelper;
 import org.folio.oaipmh.helpers.RepositoryConfigurationUtil;
 import org.folio.oaipmh.helpers.records.RecordMetadataManager;
 import org.folio.oaipmh.helpers.response.ResponseHelper;
-import org.folio.oaipmh.processors.MarcWithHoldingsRequestHelper;
+import org.folio.oaipmh.service.FolioIntegrationService;
 import org.folio.rest.client.SourceStorageSourceRecordsClient;
 import org.folio.rest.persist.PostgresClient;
-import org.folio.rest.persist.SQLConnection;
 import org.folio.rest.tools.utils.TenantTool;
+import org.folio.spring.SpringContextUtil;
 import org.openarchives.oai._2.ListRecordsType;
 import org.openarchives.oai._2.OAIPMH;
 import org.openarchives.oai._2.RecordType;
 import org.openarchives.oai._2.ResumptionTokenType;
 import org.openarchives.oai._2.StatusType;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import com.google.common.collect.Maps;
 
-import io.vertx.core.AsyncResult;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -62,38 +60,37 @@ import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.parsetools.JsonEvent;
 import io.vertx.core.parsetools.JsonParser;
 import io.vertx.core.parsetools.impl.JsonParserImpl;
-import io.vertx.pgclient.PgConnection;
-import io.vertx.sqlclient.Row;
-import io.vertx.sqlclient.Tuple;
 
-
+@Component
 public abstract class StreamingHelper extends AbstractHelper {
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
   public static final int DATABASE_FETCHING_CHUNK_SIZE = 100;
-  private static final String INSTANCES_TABLE_NAME = "INSTANCES";
-  private static final String INSTANCE_ID_COLUMN_NAME = "INSTANCE_ID";
-  private static final String REQUEST_ID_COLUMN_NAME = "REQUEST_ID";
+
   private static final String INSTANCE_ID_FIELD_NAME = "instanceid";
   private static final String SKIP_SUPPRESSED_FROM_DISCOVERY_RECORDS = "skipSuppressedFromDiscoveryRecords";
   private static final String INSTANCE_IDS_ENRICH_PARAM_NAME = "instanceIds";
-  private static final String DELETED_RECORD_SUPPORT_PARAM_NAME = "deletedRecordSupport";
-  private static final String START_DATE_PARAM_NAME = "startDate";
-  private static final String END_DATE_PARAM_NAME = "endDate";
+
   private static final String INVENTORY_INSTANCES_ENDPOINT = "/oai-pmh-view/enrichedInstances";
-  private static final String INVENTORY_UPDATED_INSTANCES_ENDPOINT = "/oai-pmh-view/updatedInstanceIds";
 
+  protected FolioIntegrationService folioIntegrationService;
 
+  protected PostgresClientOaiPmhRepository oaiPmhRepository;
 
   protected void handleStreamingResponse(Request request, Context vertxContext, Promise<Response> promise, PostgresClient postgresClient, String resumptionToken, boolean deletedRecordSupport, String requestId) {
-    Promise<Void> fetchingIdsPromise;
+    Future<Void> fetchingIdsPromise;
     if (resumptionToken == null
       || request.getRequestId() == null) { // the first request from EDS
       fetchingIdsPromise = createBatchStream(request, promise, vertxContext, requestId, postgresClient);
-      fetchingIdsPromise.future().onComplete(e -> processBatch(request, vertxContext, postgresClient, promise, deletedRecordSupport, requestId, true));
+      fetchingIdsPromise.onFailure(t-> handleException(promise, t));
+      fetchingIdsPromise.onSuccess(e -> processBatch(request, vertxContext, postgresClient, promise, deletedRecordSupport, requestId, true));
     } else {
       processBatch(request, vertxContext, postgresClient, promise, deletedRecordSupport, requestId, false);
     }
+  }
+
+  public StreamingHelper() {
+    SpringContextUtil.autowireDependencies(this, Vertx.currentContext());
   }
 
   private void processBatch(Request request, Context context, PostgresClient postgresClient, Promise<Response> promise, boolean deletedRecordSupport, String requestId, boolean firstBatch) {
@@ -102,116 +99,65 @@ public abstract class StreamingHelper extends AbstractHelper {
         RepositoryConfigurationUtil.getProperty(request.getTenant(),
           REPOSITORY_MAX_RECORDS_PER_RESPONSE));
 
-      getNextInstances(request, requestId, batchSize, context, postgresClient).future().onComplete(fut -> {
-        if (fut.failed()) {
-          promise.fail(fut.cause());
-          return;
-        }
-        List<JsonObject> instances = fut.result();
-        if (CollectionUtils.isEmpty(instances) && !firstBatch) { // resumption token doesn't exist in context
-          handleException(promise, new IllegalArgumentException(
-            "Specified resumption token doesn't exists"));
-          return;
-        }
-
-        if (!instances.isEmpty() && instances.get(0).getString(INSTANCE_ID_FIELD_NAME).equals(request.getNextRecordId())) {
-          handleException(promise, new IllegalArgumentException(
-            "Stale resumption token"));
-          return;
-        }
-
-        if (CollectionUtils.isEmpty(instances)) {
-          buildRecordsResponse(request, requestId, instances, new HashMap<>(),
-          firstBatch, null, deletedRecordSupport)
-            .onSuccess(e -> postgresClient.closeClient(o -> promise.complete(e)))
-            .onFailure(e -> handleException(promise, e));
-          return;
-        }
-
-        String nextInstanceId = instances.size() < batchSize ? null : instances.get(batchSize).getString(INSTANCE_ID_FIELD_NAME);
-        List<JsonObject> instancesWithoutLast = nextInstanceId != null ? instances.subList(0, batchSize) : instances;
-        final SourceStorageSourceRecordsClient srsClient = new SourceStorageSourceRecordsClient(request.getOkapiUrl(),
-          request.getTenant(), request.getOkapiToken());
+      final Promise<List<JsonObject>> nextInstances = oaiPmhRepository.getNextInstances(request, batchSize, postgresClient,
+        o -> handleException(promise, o.cause()));
 
 
-        Future<Map<String, JsonObject>> srsResponse = Future.future();
-        if (CollectionUtils.isNotEmpty(instances)) {
-          srsResponse = requestSRSByIdentifiers(srsClient, instancesWithoutLast, deletedRecordSupport);
-        } else {
-          srsResponse.complete();
-        }
-        srsResponse.onSuccess(res -> buildRecordsResponse(request, requestId, instancesWithoutLast, res,
-          firstBatch, nextInstanceId, deletedRecordSupport).onSuccess(result -> {
-          deleteInstanceIds(request, instancesWithoutLast.stream()
-            .map(e -> e.getString(INSTANCE_ID_FIELD_NAME))
-            .collect(toList()), requestId, postgresClient)
-            .future().onComplete(e -> postgresClient.closeClient(o -> promise.complete(result)));
-        }).onFailure(e -> handleException(promise, e)));
-        srsResponse.onFailure(t -> handleException(promise, t));
-      });
-    } catch (Exception e) {
-      handleException(promise, e);
-    }
-  }
+      nextInstances.future().compose(ids -> enrichInstancesWIthItemAndHoldingFields(ids, request, context).future()
+        .onFailure(t -> handleException(promise, t))
+        .onSuccess(instances -> {
 
-  private Promise<Void> deleteInstanceIds(Request request, List<String> instanceIds, String requestId, PostgresClient postgresClient) {
-    Promise<Void> promise = Promise.promise();
-    String instanceIdsStr = instanceIds.stream().map(e -> "'" + e + "'").collect(Collectors.joining(", "));
-    final String sql = String.format("DELETE FROM " + INSTANCES_TABLE_NAME + " WHERE " +
-      REQUEST_ID_COLUMN_NAME + " = '%s' AND " + INSTANCE_ID_COLUMN_NAME + " IN (%s)", requestId, instanceIdsStr);
-    postgresClient.startTx(conn -> {
-      try {
-        postgresClient.execute(conn, sql, reply -> {
-          if (reply.succeeded()) {
-            endTransaction(postgresClient, conn).future().onComplete(o -> promise.complete());
-          } else {
-            endTransaction(postgresClient, conn).future().onComplete(o -> handleException(promise, reply.cause()));
+          if (CollectionUtils.isEmpty(instances) && !firstBatch) { // resumption token doesn't exist in context
+            handleException(promise, new IllegalArgumentException(
+              "Specified resumption token doesn't exists"));
+            return;
           }
-        });
-      } catch (Exception e) {
-        endTransaction(postgresClient, conn).future().onComplete(o -> handleException(promise, e));
-      }
-    });
-    return promise;
-  }
 
-  private Promise<List<JsonObject>> getNextInstances(Request request, String requestId, int batchSize, Context context, PostgresClient postgresClient) {
-    Promise<List<JsonObject>> promise = Promise.promise();
-    final String sql = String.format("SELECT json FROM " + INSTANCES_TABLE_NAME + " WHERE " +
-      REQUEST_ID_COLUMN_NAME + " = '%s' ORDER BY " + INSTANCE_ID_COLUMN_NAME + " LIMIT %d", requestId, batchSize + 1);
-    postgresClient.startTx(conn -> {
-      try {
-
-        postgresClient.select(conn, sql, reply -> {
-          if (reply.succeeded()) {
-            List<JsonObject> list = StreamSupport
-              .stream(reply.result().spliterator(), false)
-              .map(this::createJsonFromRow).map(e -> e.getJsonObject("json")).collect(toList());
-            enrichInstances(list, request, context)
-              .future().onComplete(e ->
-              endTransaction(postgresClient, conn).future().onComplete(o -> promise.complete(e.result())));
-          } else {
-            endTransaction(postgresClient, conn).future().onComplete(o -> handleException(promise, reply.cause()));
+          if (!instances.isEmpty() && instances.get(0).getString(INSTANCE_ID_FIELD_NAME).equals(request.getNextRecordId())) {
+            handleException(promise, new IllegalArgumentException(
+              "Stale resumption token"));
+            return;
           }
-        });
+
+          if (CollectionUtils.isEmpty(instances)) {
+            buildRecordsResponse(request, requestId, instances, new HashMap<>(),
+              firstBatch, null, deletedRecordSupport)
+              .onSuccess(e -> postgresClient.closeClient(o -> promise.complete(e)))
+              .onFailure(e -> handleException(promise, e));
+            return;
+          }
+
+          String nextInstanceId = instances.size() < batchSize ? null : instances.get(batchSize).getString(INSTANCE_ID_FIELD_NAME);
+          List<JsonObject> instancesWithoutLast = nextInstanceId != null ? instances.subList(0, batchSize) : instances;
+          final SourceStorageSourceRecordsClient srsClient = new SourceStorageSourceRecordsClient(request.getOkapiUrl(),
+            request.getTenant(), request.getOkapiToken());
+
+
+          Future<Map<String, JsonObject>> srsResponse = Future.future();
+          if (CollectionUtils.isNotEmpty(instances)) {
+            srsResponse = requestSRSByIdentifiers(srsClient, instancesWithoutLast, deletedRecordSupport);
+          } else {
+            srsResponse.complete();
+          }
+          srsResponse.onSuccess(res -> buildRecordsResponse(request, requestId, instancesWithoutLast, res,
+            firstBatch, nextInstanceId, deletedRecordSupport).onSuccess(result ->
+            oaiPmhRepository.deleteInstanceIds(instancesWithoutLast.stream()
+              .map(e -> e.getString(INSTANCE_ID_FIELD_NAME))
+              .collect(toList()), requestId, postgresClient, o -> handleException(promise, o.cause()))
+              .future().onComplete(e -> postgresClient.closeClient(o -> promise.complete(result)))).onFailure(e -> handleException(promise, e)));
+          srsResponse.onFailure(t -> handleException(promise, t));
+
+        }));
       } catch (Exception e) {
-        endTransaction(postgresClient, conn).future().onComplete(o -> handleException(promise, e));
+        handleException(promise, e);
       }
-    });
-    return promise;
-  }
 
-  private Promise<Void> endTransaction(PostgresClient postgresClient, AsyncResult<SQLConnection> conn) {
-    Promise<Void> promise = Promise.promise();
-    try {
-      postgresClient.endTx(conn, promise);
-    } catch (Exception e) {
-      handleException(promise, e);
-    }
-    return promise;
-  }
 
-  private Promise<List<JsonObject>> enrichInstances(List<JsonObject> result, Request request, Context context) {
+}
+    //todo
+//  protected abstract void processNextBatchOfInstanceIds(List<JsonObject> result, Request request, Context context);
+
+  private Promise<List<JsonObject>> enrichInstancesWIthItemAndHoldingFields(List<JsonObject> result, Request request, Context context) {
     Map<String, JsonObject> instances = result.stream().collect(toMap(e -> e.getString(INSTANCE_ID_FIELD_NAME), Function.identity()));
     Promise<List<JsonObject>> completePromise = Promise.promise();
     HttpClient httpClient = context.owner().createHttpClient();
@@ -220,7 +166,7 @@ public abstract class StreamingHelper extends AbstractHelper {
     BatchStreamWrapper databaseWriteStream = getBatchHttpStream(httpClient, completePromise, enrichInventoryClientRequest, context);
     JsonObject entries = new JsonObject();
     entries.put(INSTANCE_IDS_ENRICH_PARAM_NAME, new JsonArray(new ArrayList<>(instances.keySet())));
-    entries.put(SKIP_SUPPRESSED_FROM_DISCOVERY_RECORDS, isSkipSuppressed(request));
+    entries.put(SKIP_SUPPRESSED_FROM_DISCOVERY_RECORDS, utils.shouldSkipSuppressedRecords(request));
     enrichInventoryClientRequest.end(entries.encode());
 
     databaseWriteStream.handleBatch(batch -> {
@@ -260,23 +206,6 @@ public abstract class StreamingHelper extends AbstractHelper {
           itemJson.put(RecordMetadataManager.INVENTORY_SUPPRESS_DISCOVERY_FIELD, true);
         }
       }
-  }
-
-  private JsonObject createJsonFromRow(Row row) {
-    JsonObject json = new JsonObject();
-    if (row != null) {
-      for (int i = 0; i < row.size(); i++) {
-        json.put(row.getColumnName(i), convertRowValue(row.getValue(i)));
-      }
-    }
-    return json;
-  }
-
-  private Object convertRowValue(Object value) {
-    if (value == null) {
-      return "";
-    }
-    return value instanceof JsonObject ? value : value.toString();
   }
 
   private ResumptionTokenType buildResumptionTokenFromRequest(Request request, String id, long returnedCount, String nextInstanceId) {
@@ -380,62 +309,23 @@ public abstract class StreamingHelper extends AbstractHelper {
     return records;
   }
 
-  private HttpClientRequest buildInventoryQuery(HttpClient httpClient, Request request) {
-    Map<String, String> paramMap = new HashMap<>();
-    Date date = convertStringToDate(request.getFrom(), false);
-    if (date != null) {
-      paramMap.put(START_DATE_PARAM_NAME, dateFormat.format(date));
-    }
-    date = convertStringToDate(request.getUntil(), true);
-    if (date != null) {
-      paramMap.put(END_DATE_PARAM_NAME, dateFormat.format(date));
-    }
-    paramMap.put(DELETED_RECORD_SUPPORT_PARAM_NAME,
-      String.valueOf(
-        RepositoryConfigurationUtil.isDeletedRecordsEnabled(request)));
-    paramMap.put(SKIP_SUPPRESSED_FROM_DISCOVERY_RECORDS,
-      String.valueOf(
-        isSkipSuppressed(request)));
-
-    final String params = paramMap.entrySet().stream()
-      .map(e -> e.getKey() + "=" + e.getValue())
-      .collect(Collectors.joining("&"));
-
-    String inventoryQuery = String.format("%s%s?%s", request.getOkapiUrl(), INVENTORY_UPDATED_INSTANCES_ENDPOINT, params);
-
-
-    logger.info("Sending request to :" + inventoryQuery);
-    final HttpClientRequest httpClientRequest = httpClient
-      .getAbs(inventoryQuery);
-
-    httpClientRequest.putHeader(OKAPI_TOKEN, request.getOkapiToken());
-    httpClientRequest.putHeader(OKAPI_TENANT, TenantTool.tenantId(request.getOkapiHeaders()));
-    httpClientRequest.putHeader(ACCEPT, APPLICATION_JSON);
-
-    return httpClientRequest;
-  }
-
-  private boolean isSkipSuppressed(Request request) {
-    return !getBooleanProperty(request.getOkapiHeaders(), REPOSITORY_SUPPRESSED_RECORDS_PROCESSING);
-  }
-
-  private Promise<Void> createBatchStream(Request request,
+  private Future<Void> createBatchStream(Request request,
                                           Promise<Response> oaiPmhResponsePromise,
                                           Context vertxContext, String requestId, PostgresClient postgresClient) {
     Promise<Void> completePromise = Promise.promise();
     HttpClient httpClient = vertxContext.owner().createHttpClient();
-    HttpClientRequest httpClientRequest = buildInventoryQuery(httpClient, request);
+    HttpClientRequest httpClientRequest = folioIntegrationService.buildGetUpdatedInstanceIdsQuery(httpClient, request);
     BatchStreamWrapper databaseWriteStream = getBatchHttpStream(httpClient, oaiPmhResponsePromise, httpClientRequest, vertxContext);
     httpClientRequest.sendHead();
     databaseWriteStream.handleBatch(batch -> {
-
-      Promise<Void> savePromise = saveInstancesIds(batch, request, requestId, postgresClient);
-
+      Promise<Void> savePromise = oaiPmhRepository.saveInstancesIds(batch, request, requestId, postgresClient);
+      savePromise.future().onFailure(completePromise::fail);
       if (isTheLastBatch(databaseWriteStream, batch)) {
-        savePromise.future().onComplete(e -> completePromise.complete());
+        savePromise.future().onSuccess(e -> completePromise.complete());
       }
+
     });
-    return completePromise;
+    return completePromise.future();
   }
 
   private boolean isTheLastBatch(BatchStreamWrapper databaseWriteStream, List<JsonEvent> batch) {
@@ -472,31 +362,7 @@ public abstract class StreamingHelper extends AbstractHelper {
     return databaseWriteStream;
   }
 
-  private Promise<Void> saveInstancesIds(List<JsonEvent> instances, Request request, String requestId, PostgresClient postgresClient) {
-    Promise<Void> promise = Promise.promise();
-    postgresClient.getConnection(e -> {
-      List<Tuple> batch = new ArrayList<>();
-      List<JsonObject> entities = instances.stream().map(JsonEvent::objectValue).collect(toList());
-
-      for (JsonObject jsonObject : entities) {
-        String id = jsonObject.getString(INSTANCE_ID_FIELD_NAME);
-        batch.add(Tuple.of(UUID.fromString(id), requestId, jsonObject));
-      }
-      String tenantId = TenantTool.tenantId(request.getOkapiHeaders());
-      String sql = "INSERT INTO " + PostgresClient.convertToPsqlStandard(tenantId) + "." + INSTANCES_TABLE_NAME + " (instance_id, request_id, json) VALUES ($1, $2, $3) RETURNING instance_id";
-
-      PgConnection connection = e.result();
-      connection.preparedQuery(sql).executeBatch(batch, (queryRes) -> {
-        if (queryRes.failed()) {
-          promise.fail(queryRes.cause());
-        } else {
-          promise.complete();
-        }
-      });
-    });
-    return promise;
-  }
-
+  //TODO
   private HttpClientRequest createEnrichInventoryClientRequest(HttpClient httpClient, Request request) {
     final HttpClientRequest httpClientRequest = httpClient
       .postAbs(String.format("%s%s", request.getOkapiUrl(), INVENTORY_INSTANCES_ENDPOINT));
@@ -508,7 +374,7 @@ public abstract class StreamingHelper extends AbstractHelper {
 
     return httpClientRequest;
   }
-
+  //TODO
   private Future<Map<String, JsonObject>> requestSRSByIdentifiers(SourceStorageSourceRecordsClient srsClient,
                                                                   List<JsonObject> batch, boolean deletedRecordSupport) {
     final List<String> listOfIds = extractListOfIdsForSRSRequest(batch);
@@ -542,11 +408,21 @@ public abstract class StreamingHelper extends AbstractHelper {
     return promise.future();
   }
 
+  //TODO
   private List<String> extractListOfIdsForSRSRequest(List<JsonObject> batch) {
 
     return batch.stream().
       filter(Objects::nonNull)
       .map(instance -> instance.getString(INSTANCE_ID_FIELD_NAME))
       .collect(toList());
+  }
+
+  @Autowired
+  public void setFolioIntegrationService(FolioIntegrationService folioIntegrationService) {
+    this.folioIntegrationService = folioIntegrationService;
+  }
+  @Autowired
+  public void setOaiPmhRepository(PostgresClientOaiPmhRepository oaiPmhRepository) {
+    this.oaiPmhRepository = oaiPmhRepository;
   }
 }
