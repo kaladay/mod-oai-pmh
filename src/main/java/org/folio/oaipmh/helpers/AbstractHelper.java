@@ -75,9 +75,6 @@ public abstract class AbstractHelper implements VerbHelper {
 
   private static final Logger logger = LoggerFactory.getLogger(AbstractHelper.class);
 
-  @Autowired
-  protected Utils utils;
-
   private ResponseHelper responseHelper = ResponseHelper.getInstance();
 
   /**

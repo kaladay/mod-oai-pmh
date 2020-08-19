@@ -14,6 +14,7 @@ import static org.folio.oaipmh.Constants.REPOSITORY_SUPPRESSED_RECORDS_PROCESSIN
 import static org.folio.oaipmh.Constants.REQUEST_ID_PARAM;
 import static org.folio.oaipmh.Constants.UNTIL_PARAM;
 import static org.folio.oaipmh.helpers.RepositoryConfigurationUtil.getBooleanProperty;
+import static org.folio.oaipmh.service.Utils.shouldSkipSuppressedRecords;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -90,7 +91,11 @@ public abstract class StreamingHelper extends AbstractHelper {
   }
 
   public StreamingHelper() {
-    SpringContextUtil.autowireDependencies(this, Vertx.currentContext());
+    try {
+      SpringContextUtil.autowireDependencies(this, Vertx.currentContext());
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
   }
 
   private void processBatch(Request request, Context context, PostgresClient postgresClient, Promise<Response> promise, boolean deletedRecordSupport, String requestId, boolean firstBatch) {
@@ -99,11 +104,11 @@ public abstract class StreamingHelper extends AbstractHelper {
         RepositoryConfigurationUtil.getProperty(request.getTenant(),
           REPOSITORY_MAX_RECORDS_PER_RESPONSE));
 
-      final Promise<List<JsonObject>> nextInstances = oaiPmhRepository.getNextInstances(request, batchSize, postgresClient,
+      final Future<List<JsonObject>> nextInstances = oaiPmhRepository.getNextInstances(request, batchSize, postgresClient,
         o -> handleException(promise, o.cause()));
 
 
-      nextInstances.future().compose(ids -> enrichInstancesWIthItemAndHoldingFields(ids, request, context).future()
+      nextInstances.compose(ids -> enrichInstancesWIthItemAndHoldingFields(ids, request, context).future()
         .onFailure(t -> handleException(promise, t))
         .onSuccess(instances -> {
 
@@ -166,7 +171,7 @@ public abstract class StreamingHelper extends AbstractHelper {
     BatchStreamWrapper databaseWriteStream = getBatchHttpStream(httpClient, completePromise, enrichInventoryClientRequest, context);
     JsonObject entries = new JsonObject();
     entries.put(INSTANCE_IDS_ENRICH_PARAM_NAME, new JsonArray(new ArrayList<>(instances.keySet())));
-    entries.put(SKIP_SUPPRESSED_FROM_DISCOVERY_RECORDS, utils.shouldSkipSuppressedRecords(request));
+    entries.put(SKIP_SUPPRESSED_FROM_DISCOVERY_RECORDS, shouldSkipSuppressedRecords(request));
     enrichInventoryClientRequest.end(entries.encode());
 
     databaseWriteStream.handleBatch(batch -> {

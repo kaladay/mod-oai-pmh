@@ -27,12 +27,10 @@ public class MarcWithHoldingsRequestHelper extends StreamingHelper {
 
   protected final Logger logger = LoggerFactory.getLogger(getClass());
 
-  public static final MarcWithHoldingsRequestHelper INSTANCE = new MarcWithHoldingsRequestHelper();
-
   private static final String INSTANCE_UPDATED_DATE_FIELD_NAME = "updateddate";
 
   public static MarcWithHoldingsRequestHelper getInstance() {
-    return INSTANCE;
+    return new MarcWithHoldingsRequestHelper();
   }
 
   /**

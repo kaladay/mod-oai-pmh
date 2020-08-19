@@ -14,6 +14,7 @@ import org.folio.rest.persist.SQLConnection;
 import org.springframework.stereotype.Component;
 
 import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
 import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
@@ -86,7 +87,7 @@ public class PostgresClientOaiPmhRepository {
     return promise;
   }
 
-  public Promise<List<JsonObject>> getNextInstances(Request request, int batchSize, PostgresClient postgresClient,
+  public Future<List<JsonObject>> getNextInstances(Request request, int batchSize, PostgresClient postgresClient,
                                                    Handler<AsyncResult<Void>> failureHandler
   ) {
     Promise<List<JsonObject>> promise = Promise.promise();
@@ -99,7 +100,8 @@ public class PostgresClientOaiPmhRepository {
             List<JsonObject> list = StreamSupport
               .stream(reply.result().spliterator(), false)
               .map(this::createJsonFromRow).map(e -> e.getJsonObject("json")).collect(toList());
-            promise.complete(list);
+            endTransaction(postgresClient, conn).future()
+              .onComplete(t -> promise.complete(list));
           } else {
             endTransaction(postgresClient, conn).future().onComplete(failureHandler);
           }
@@ -108,7 +110,7 @@ public class PostgresClientOaiPmhRepository {
         endTransaction(postgresClient, conn).future().onComplete(failureHandler);
       }
     });
-    return promise;
+    return promise.future();
   }
 
   private JsonObject createJsonFromRow(Row row) {
