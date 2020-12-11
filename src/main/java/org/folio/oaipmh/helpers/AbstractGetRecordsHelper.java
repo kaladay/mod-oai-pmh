@@ -104,7 +104,7 @@ public abstract class AbstractGetRecordsHelper extends AbstractHelper {
     return getResponseHelper().buildFailureResponse(oaipmh, request);
   }
 
-  private Response buildRecordsResponse(Context ctx, Request request,
+  protected Response buildRecordsResponse(Context ctx, Request request,
                                                            JsonObject instancesResponseBody) {
     JsonArray instances = storageHelper.getItems(instancesResponseBody);
     Integer totalRecords = storageHelper.getTotalRecords(instancesResponseBody);

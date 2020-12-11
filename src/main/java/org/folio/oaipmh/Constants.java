@@ -35,6 +35,7 @@ public final class Constants {
 
   public static final String SOURCE_RECORD_STORAGE = "SRS";
 
+  public static final String SOURCE_RECORDS = "sourceRecords";
   public static final String PARSED_RECORD = "parsedRecord";
   public static final String CONTENT = "content";
   public static final String FIELDS = "fields";
