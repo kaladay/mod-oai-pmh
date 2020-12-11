@@ -1151,6 +1151,21 @@ class OaiPmhImplTest {
   }
 
   @Test
+  void getOaiGetRecordVerbWithExistingIdentifierAndMetadataPrefixMarc21WithHoldings() {
+    String identifier = IDENTIFIER_PREFIX + OkapiMockServer.EXISTING_IDENTIFIER_WITH_HOLDINGS;
+    RequestSpecification request = createBaseRequest()
+      .with()
+      .param(VERB_PARAM, GET_RECORD.value())
+      .param(IDENTIFIER_PARAM, identifier)
+      .param(METADATA_PREFIX_PARAM, MetadataPrefix.MARC21WITHHOLDINGS.getName());
+    OAIPMH oaiPmhResponseWithExistingIdentifier = verify200WithXml(request, GET_RECORD);
+    HeaderType recordHeader = oaiPmhResponseWithExistingIdentifier.getGetRecord().getRecord().getHeader();
+    verifyIdentifiers(Collections.singletonList(recordHeader), Collections.singletonList("f31a36de-fcf8-44f9-87ef-a55d06ad21ae"));
+    assertThat(oaiPmhResponseWithExistingIdentifier.getGetRecord(), is(notNullValue()));
+    assertThat(oaiPmhResponseWithExistingIdentifier.getErrors(), is(empty()));
+  }
+
+  @Test
   void getOaiMetadataFormats(VertxTestContext testContext) {
     getLogger().info("=== Test Metadata Formats without identifier ===");
     RequestSpecification request = createBaseRequest()

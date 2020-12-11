@@ -43,6 +43,7 @@ public class OkapiMockServer {
   public static final String TEST_USER_ID = "30fde4be-2d1a-4546-8d6c-b468caca2720";
 
   static final String EXISTING_IDENTIFIER = "existing-identifier";
+  static final String EXISTING_IDENTIFIER_WITH_HOLDINGS = "existing-identifier-with-holdings";
   static final String NON_EXISTING_IDENTIFIER = "non-existing-identifier";
   static final String INVALID_IDENTIFIER = "non-existing-identifier";
   static final String ERROR_IDENTIFIER = "please-return-error";
@@ -91,6 +92,7 @@ public class OkapiMockServer {
   // Paths to json files
   private static final String INSTANCES_0 = "/instances_0.json";
   private static final String INSTANCES_1 = "/instances_1.json";
+  private static final String INSTANCES_1_WITH_HOLDINGS = "/instances_1_with_holdings.json";
   private static final String INSTANCES_1_NO_RECORD_SOURCE = "/instances_1_withNoRecordSource.json";
 
   private static final String INSTANCES_3 = "/instances_3.json";
@@ -278,7 +280,9 @@ public class OkapiMockServer {
     String uri = ctx.request()
       .absoluteURI();
     if (uri != null) {
-      if (uri.contains(String.format("%s=%s", ID_PARAM, EXISTING_IDENTIFIER))) {
+      if (uri.contains(String.format("%s=%s", ID_PARAM, EXISTING_IDENTIFIER_WITH_HOLDINGS))) {
+        successResponse(ctx, getJsonObjectFromFile(SOURCE_STORAGE_RESULT_URI + INSTANCES_1_WITH_HOLDINGS));
+      } else if (uri.contains(String.format("%s=%s", ID_PARAM, EXISTING_IDENTIFIER))) {
         successResponse(ctx, getJsonObjectFromFile(SOURCE_STORAGE_RESULT_URI + INSTANCES_1));
       } else if (uri.contains(String.format("%s=%s", ID_PARAM, NON_EXISTING_IDENTIFIER))) {
         successResponse(ctx, getJsonObjectFromFile(SOURCE_STORAGE_RESULT_URI + INSTANCES_0));

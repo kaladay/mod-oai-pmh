@@ -140,7 +140,7 @@ public abstract class AbstractGetRecordsHelper extends AbstractHelper {
    * Builds {@link Map} with storage id as key and {@link RecordType} with populated header if there is any,
    * otherwise empty map is returned
    */
-  private Map<String, RecordType> buildRecords(Context context, Request request, JsonArray instances) {
+  protected Map<String, RecordType> buildRecords(Context context, Request request, JsonArray instances) {
     final boolean suppressedRecordsProcessingEnabled = getBooleanProperty(request.getOkapiHeaders(),
       REPOSITORY_SUPPRESSED_RECORDS_PROCESSING);
 
