@@ -99,12 +99,12 @@ public abstract class AbstractGetRecordsHelper extends AbstractHelper {
     return promise.future();
   }
 
-  private Response buildNoRecordsFoundOaiResponse(OAIPMH oaipmh, Request request) {
+  protected Response buildNoRecordsFoundOaiResponse(OAIPMH oaipmh, Request request) {
     oaipmh.withErrors(createNoRecordsFoundError());
     return getResponseHelper().buildFailureResponse(oaipmh, request);
   }
 
-  private Response buildRecordsResponse(Context ctx, Request request,
+  protected Response buildRecordsResponse(Context ctx, Request request,
                                                            JsonObject instancesResponseBody) {
     JsonArray instances = storageHelper.getItems(instancesResponseBody);
     Integer totalRecords = storageHelper.getTotalRecords(instancesResponseBody);

@@ -39,6 +39,7 @@ import org.folio.oaipmh.Request;
 import org.folio.oaipmh.helpers.GetOaiIdentifiersHelper;
 import org.folio.oaipmh.helpers.GetOaiMetadataFormatsHelper;
 import org.folio.oaipmh.helpers.GetOaiRecordHelper;
+import org.folio.oaipmh.helpers.GetOaiRecordWithHoldingsHelper;
 import org.folio.oaipmh.helpers.GetOaiRecordsHelper;
 import org.folio.oaipmh.helpers.GetOaiRepositoryInfoHelper;
 import org.folio.oaipmh.helpers.GetOaiSetsHelper;
@@ -134,6 +135,8 @@ public class OaiPmhImpl implements Oai {
             if(verbType.equals(LIST_RECORDS) && MetadataPrefix.MARC21WITHHOLDINGS.getName().equals(targetMetadataPrefix)) {
               //in 2020Q3 change it common approach for all helpers
               verbHelper = MarcWithHoldingsRequestHelper.getInstance();
+            } else if (verbType.equals(GET_RECORD) && MetadataPrefix.MARC21WITHHOLDINGS.getName().equals(targetMetadataPrefix)) {
+              verbHelper = GetOaiRecordWithHoldingsHelper.getInstance();
             } else {
               verbHelper = HELPERS.get(verbType);
             }
